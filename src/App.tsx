@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Alert, Button, DatePicker, Form, InputNumber, Layout, Select, Space, Spin, Typography } from 'antd'
+import { Alert, Button, DatePicker, Form, InputNumber, Layout, Select, Space, Spin, Switch, Typography } from 'antd'
 import dayjs from 'dayjs'
 
 import { fetchCodes, fetchSignals, fetchStockData } from './api/endpoints'
 import type { SignalsQueryParams } from './api/types'
 import PriceChart from './components/PriceChart'
+import PerformanceChart from './components/PerformanceChart'
 import SignalsTable from './components/SignalsTable'
 import StatusCards from './components/StatusCards'
 
@@ -32,6 +33,7 @@ function App() {
     filter_sort: 'desc',
   })
   const [focusDate, setFocusDate] = useState<string | undefined>(undefined)
+  const [showBenchmark, setShowBenchmark] = useState(false)
 
   const codesQuery = useQuery({
     queryKey: ['codes'],
@@ -48,8 +50,8 @@ function App() {
   }, [codesQuery.data, form])
 
   const stockQuery = useQuery({
-    queryKey: ['stock-data', submitted],
-    queryFn: () => fetchStockData(submitted),
+    queryKey: ['stock-data', submitted, showBenchmark],
+    queryFn: () => fetchStockData({ ...submitted, include_performance: showBenchmark }),
   })
 
   const signalsQuery = useQuery({
@@ -71,7 +73,15 @@ function App() {
   }, [codesQuery.data])
 
   const loading = stockQuery.isLoading || signalsQuery.isLoading
-  const bars = stockQuery.data ?? []
+  const stockPayload = useMemo(() => {
+    if (Array.isArray(stockQuery.data)) {
+      return { data: stockQuery.data }
+    }
+    return stockQuery.data ?? { data: [] }
+  }, [stockQuery.data])
+
+  const bars = stockPayload.data ?? []
+  const performance = stockPayload.performance
   const signals = signalsQuery.data?.data ?? []
   const signalsMeta = signalsQuery.data?.meta ?? null
 
@@ -144,6 +154,10 @@ function App() {
               <RangePicker allowClear style={{ width: '100%' }} />
             </Form.Item>
 
+            <Form.Item label="Benchmark" style={{ marginBottom: 8 }}>
+              <Switch checked={showBenchmark} onChange={setShowBenchmark} />
+            </Form.Item>
+
             <Form.Item label="Short Window" name="short_window" rules={[{ required: true }]}>
               <InputNumber min={1} max={500} style={{ width: '100%' }} />
             </Form.Item>
@@ -200,6 +214,7 @@ function App() {
               <Button
                 onClick={() => {
                   form.resetFields()
+                  setShowBenchmark(false)
                   setSubmitted({
                     code: DEFAULTS.code,
                     short_window: DEFAULTS.short_window,
@@ -243,6 +258,15 @@ function App() {
               />
             )}
           </div>
+
+          {showBenchmark && performance && !stockQuery.isLoading ? (
+            <div style={{ marginTop: 12 }}>
+              <Typography.Title level={5} style={{ margin: '0 0 8px 0' }}>
+                Strategy vs Buy &amp; Hold (Normalized)
+              </Typography.Title>
+              <PerformanceChart strategy={performance.strategy} benchmark={performance.benchmark} />
+            </div>
+          ) : null}
 
           <div style={{ marginTop: 12 }}>
             <Typography.Title level={5} style={{ margin: '0 0 8px 0' }}>
