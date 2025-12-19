@@ -15,6 +15,20 @@ export type StockBar = {
   ma_long: number | null
 }
 
+export type PerformancePoint = {
+  date: string
+  value: number
+}
+
+export type PerformanceSeries = {
+  strategy: PerformancePoint[]
+  benchmark: PerformancePoint[]
+}
+
+export type StockMeta = {
+  [key: string]: unknown
+}
+
 export type Signal = {
   date: string
   signal_type: 'BUY' | 'SELL'
@@ -38,7 +52,16 @@ export type StockQueryParams = {
   end_date?: string
   short_window: number
   long_window: number
+  include_performance?: boolean
 }
+
+export type StockDataResponse =
+  | StockBar[]
+  | {
+      data: StockBar[]
+      meta?: StockMeta
+      performance?: PerformanceSeries
+    }
 
 export type SignalsQueryParams = StockQueryParams & {
   gen_confirm_bars?: number
