@@ -46,13 +46,42 @@ export type SignalsResponse = {
   }
 }
 
-export type StockQueryParams = {
+export type StrategyMode = 'basic' | 'advanced'
+export type MovingAverageType = 'sma' | 'ema'
+
+export type CommonQueryParams = {
   code: string
   start_date?: string
   end_date?: string
   short_window: number
   long_window: number
+  gen_confirm_bars?: number
+  gen_min_cross_gap?: number
+}
+
+export type StockDataQueryParams = CommonQueryParams & {
   include_performance?: boolean
+
+  strategy_mode?: StrategyMode
+
+  // Advanced strategy parameters (only meaningful when strategy_mode=advanced)
+  regime_ma_window?: number
+  use_adx_filter?: boolean
+  adx_window?: number
+  adx_threshold?: number
+
+  ensemble_pairs?: string
+  ensemble_ma_type?: MovingAverageType
+
+  target_vol?: number
+  vol_window?: number
+  max_leverage?: number
+  min_vol_floor?: number
+
+  use_chandelier_stop?: boolean
+  chandelier_k?: number
+  use_vol_stop?: boolean
+  vol_stop_atr_mult?: number
 }
 
 export type StockDataResponse =
@@ -63,9 +92,7 @@ export type StockDataResponse =
       performance?: PerformanceSeries
     }
 
-export type SignalsQueryParams = StockQueryParams & {
-  gen_confirm_bars?: number
-  gen_min_cross_gap?: number
+export type SignalsQueryParams = CommonQueryParams & {
   filter_signal_type?: 'all' | 'BUY' | 'SELL'
   filter_limit?: number
   filter_sort?: 'asc' | 'desc'

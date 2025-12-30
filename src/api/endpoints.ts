@@ -1,12 +1,12 @@
 import { apiClient } from './client'
-import type { CodeItem, Signal, SignalsQueryParams, SignalsResponse, StockDataResponse, StockQueryParams } from './types'
+import type { CodeItem, Signal, SignalsQueryParams, SignalsResponse, StockDataQueryParams, StockDataResponse } from './types'
 
 export async function fetchCodes(): Promise<CodeItem[]> {
   const resp = await apiClient.get<CodeItem[]>('/api/codes/')
   return resp.data
 }
 
-export async function fetchStockData(params: StockQueryParams): Promise<StockDataResponse> {
+export async function fetchStockData(params: StockDataQueryParams): Promise<StockDataResponse> {
   const resp = await apiClient.get<StockDataResponse>('/api/stock-data/', { params })
   return resp.data
 }
