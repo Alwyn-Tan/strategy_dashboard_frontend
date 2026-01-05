@@ -18,7 +18,7 @@ import {
 import dayjs from 'dayjs'
 
 import { fetchCodes, fetchSignals, fetchStockData } from './api/endpoints'
-import type { SignalsQueryParams, StockDataQueryParams, StockMeta, StrategyMode } from './api/types'
+import type { SignalsQueryParams, StockDataQueryParams, StockMeta } from './api/types'
 import PriceChart from './components/PriceChart'
 import PerformanceChart from './components/PerformanceChart'
 import SignalsTable from './components/SignalsTable'
@@ -33,17 +33,20 @@ const DEFAULTS = {
   gen_confirm_bars: 0,
   gen_min_cross_gap: 0,
   filter_signal_type: 'all',
-  strategy_mode: 'basic',
 
+  use_ensemble: false,
   ensemble_pairs: '5:20,10:50,20:100,50:200',
   ensemble_ma_type: 'sma',
 
+  use_regime_filter: false,
   regime_ma_window: 200,
   use_adx_filter: false,
   adx_window: 14,
   adx_threshold: 20,
 
-  target_vol: 0.02,
+  use_vol_targeting: false,
+  target_vol_annual: 0.15,
+  trading_days_per_year: 252,
   vol_window: 14,
   max_leverage: 1,
   min_vol_floor: 1e-6,
@@ -55,17 +58,19 @@ const DEFAULTS = {
 } as const
 
 type DashboardSubmitted = SignalsQueryParams & {
-  strategy_mode?: StrategyMode
-
+  use_ensemble?: boolean
   ensemble_pairs?: string
   ensemble_ma_type?: 'sma' | 'ema'
 
+  use_regime_filter?: boolean
   regime_ma_window?: number
   use_adx_filter?: boolean
   adx_window?: number
   adx_threshold?: number
 
-  target_vol?: number
+  use_vol_targeting?: boolean
+  target_vol_annual?: number
+  trading_days_per_year?: number
   vol_window?: number
   max_leverage?: number
   min_vol_floor?: number
@@ -87,17 +92,19 @@ type DashboardFormValues = {
 
   filter_signal_type: 'all' | 'BUY' | 'SELL'
 
-  strategy_mode: StrategyMode
-
+  use_ensemble: boolean
   ensemble_pairs: string
   ensemble_ma_type: 'sma' | 'ema'
 
+  use_regime_filter: boolean
   regime_ma_window: number
   use_adx_filter: boolean
   adx_window: number
   adx_threshold: number
 
-  target_vol: number
+  use_vol_targeting: boolean
+  target_vol_annual: number
+  trading_days_per_year: number
   vol_window: number
   max_leverage: number
   min_vol_floor: number
@@ -176,25 +183,43 @@ function toStockDataParams(submitted: DashboardSubmitted, { includePerformance }
     include_performance: includePerformance,
   }
 
-  if (submitted.strategy_mode === 'advanced' && includePerformance) {
-    params.strategy_mode = 'advanced'
+  if (!includePerformance) {
+    return params
+  }
 
+  if (submitted.use_ensemble) {
+    params.use_ensemble = true
     params.ensemble_pairs = submitted.ensemble_pairs
     params.ensemble_ma_type = submitted.ensemble_ma_type
+  }
 
+  if (submitted.use_regime_filter) {
+    params.use_regime_filter = true
     params.regime_ma_window = submitted.regime_ma_window
-    params.use_adx_filter = submitted.use_adx_filter
-    params.adx_window = submitted.adx_window
-    params.adx_threshold = submitted.adx_threshold
 
-    params.target_vol = submitted.target_vol
+    if (submitted.use_adx_filter) {
+      params.use_adx_filter = true
+      params.adx_window = submitted.adx_window
+      params.adx_threshold = submitted.adx_threshold
+    }
+  }
+
+  if (submitted.use_vol_targeting) {
+    params.use_vol_targeting = true
+    params.target_vol_annual = submitted.target_vol_annual
+    params.trading_days_per_year = submitted.trading_days_per_year
     params.vol_window = submitted.vol_window
     params.max_leverage = submitted.max_leverage
     params.min_vol_floor = submitted.min_vol_floor
+  }
 
-    params.use_chandelier_stop = submitted.use_chandelier_stop
+  if (submitted.use_chandelier_stop) {
+    params.use_chandelier_stop = true
     params.chandelier_k = submitted.chandelier_k
-    params.use_vol_stop = submitted.use_vol_stop
+  }
+
+  if (submitted.use_vol_stop) {
+    params.use_vol_stop = true
     params.vol_stop_atr_mult = submitted.vol_stop_atr_mult
   }
 
@@ -212,17 +237,20 @@ function App() {
     gen_min_cross_gap: DEFAULTS.gen_min_cross_gap,
     filter_signal_type: DEFAULTS.filter_signal_type,
     filter_sort: 'desc',
-    strategy_mode: DEFAULTS.strategy_mode,
 
+    use_ensemble: DEFAULTS.use_ensemble,
     ensemble_pairs: DEFAULTS.ensemble_pairs,
     ensemble_ma_type: DEFAULTS.ensemble_ma_type,
 
+    use_regime_filter: DEFAULTS.use_regime_filter,
     regime_ma_window: DEFAULTS.regime_ma_window,
     use_adx_filter: DEFAULTS.use_adx_filter,
     adx_window: DEFAULTS.adx_window,
     adx_threshold: DEFAULTS.adx_threshold,
 
-    target_vol: DEFAULTS.target_vol,
+    use_vol_targeting: DEFAULTS.use_vol_targeting,
+    target_vol_annual: DEFAULTS.target_vol_annual,
+    trading_days_per_year: DEFAULTS.trading_days_per_year,
     vol_window: DEFAULTS.vol_window,
     max_leverage: DEFAULTS.max_leverage,
     min_vol_floor: DEFAULTS.min_vol_floor,
@@ -236,14 +264,20 @@ function App() {
   const [focusDate, setFocusDate] = useState<string | undefined>(undefined)
   const [showBenchmark, setShowBenchmark] = useState(false)
 
-  const strategyMode = Form.useWatch('strategy_mode', form) ?? DEFAULTS.strategy_mode
-  const isAdvanced = strategyMode === 'advanced'
+  const useEnsemble = Form.useWatch('use_ensemble', form) ?? DEFAULTS.use_ensemble
+  const useRegime = Form.useWatch('use_regime_filter', form) ?? DEFAULTS.use_regime_filter
+  const useAdx = Form.useWatch('use_adx_filter', form) ?? DEFAULTS.use_adx_filter
+  const useVolTargeting = Form.useWatch('use_vol_targeting', form) ?? DEFAULTS.use_vol_targeting
+  const useChandelier = Form.useWatch('use_chandelier_stop', form) ?? DEFAULTS.use_chandelier_stop
+  const useVolStop = Form.useWatch('use_vol_stop', form) ?? DEFAULTS.use_vol_stop
+
+  const anyFeatureEnabled = !!(useEnsemble || useRegime || useAdx || useVolTargeting || useChandelier || useVolStop)
 
   useEffect(() => {
-    if (isAdvanced && !showBenchmark) {
+    if (anyFeatureEnabled && !showBenchmark) {
       setShowBenchmark(true)
     }
-  }, [isAdvanced, showBenchmark])
+  }, [anyFeatureEnabled, showBenchmark])
 
   const codesQuery = useQuery({
     queryKey: ['codes'],
@@ -259,14 +293,12 @@ function App() {
     }
   }, [codesQuery.data, form])
 
+  const includePerformance = !!(showBenchmark || submitted.use_ensemble || submitted.use_regime_filter || submitted.use_vol_targeting || submitted.use_chandelier_stop || submitted.use_vol_stop)
+
+
   const stockQuery = useQuery({
-    queryKey: ['stock-data', submitted, showBenchmark],
-    queryFn: () =>
-      fetchStockData(
-        toStockDataParams(submitted, {
-          includePerformance: showBenchmark || submitted.strategy_mode === 'advanced',
-        }),
-      ),
+    queryKey: ['stock-data', submitted, includePerformance],
+    queryFn: () => fetchStockData(toStockDataParams(submitted, { includePerformance })),
   })
 
   const signalsQuery = useQuery({
@@ -342,17 +374,20 @@ function App() {
               gen_confirm_bars: DEFAULTS.gen_confirm_bars,
               gen_min_cross_gap: DEFAULTS.gen_min_cross_gap,
               filter_signal_type: DEFAULTS.filter_signal_type,
-              strategy_mode: DEFAULTS.strategy_mode,
 
+              use_ensemble: DEFAULTS.use_ensemble,
               ensemble_pairs: DEFAULTS.ensemble_pairs,
               ensemble_ma_type: DEFAULTS.ensemble_ma_type,
 
+              use_regime_filter: DEFAULTS.use_regime_filter,
               regime_ma_window: DEFAULTS.regime_ma_window,
               use_adx_filter: DEFAULTS.use_adx_filter,
               adx_window: DEFAULTS.adx_window,
               adx_threshold: DEFAULTS.adx_threshold,
 
-              target_vol: DEFAULTS.target_vol,
+              use_vol_targeting: DEFAULTS.use_vol_targeting,
+              target_vol_annual: DEFAULTS.target_vol_annual,
+              trading_days_per_year: DEFAULTS.trading_days_per_year,
               vol_window: DEFAULTS.vol_window,
               max_leverage: DEFAULTS.max_leverage,
               min_vol_floor: DEFAULTS.min_vol_floor,
@@ -366,7 +401,9 @@ function App() {
             }}
             onFinish={(values) => {
               const range = values.date_range
-              const normalizedPairs = values.strategy_mode === 'advanced' ? normalizeEnsemblePairs(values.ensemble_pairs) : undefined
+
+              const normalizedPairs = values.use_ensemble ? normalizeEnsemblePairs(values.ensemble_pairs) : values.ensemble_pairs
+              const useAdxFilter = values.use_regime_filter ? values.use_adx_filter : false
 
               const params: DashboardSubmitted = {
                 code: values.code,
@@ -379,17 +416,19 @@ function App() {
                 start_date: range ? range[0].format('YYYY-MM-DD') : undefined,
                 end_date: range ? range[1].format('YYYY-MM-DD') : undefined,
 
-                strategy_mode: values.strategy_mode,
-
-                ensemble_pairs: normalizedPairs ?? values.ensemble_pairs,
+                use_ensemble: values.use_ensemble,
+                ensemble_pairs: normalizedPairs,
                 ensemble_ma_type: values.ensemble_ma_type,
 
+                use_regime_filter: values.use_regime_filter,
                 regime_ma_window: values.regime_ma_window,
-                use_adx_filter: values.use_adx_filter,
+                use_adx_filter: useAdxFilter,
                 adx_window: values.adx_window,
                 adx_threshold: values.adx_threshold,
 
-                target_vol: values.target_vol,
+                use_vol_targeting: values.use_vol_targeting,
+                target_vol_annual: values.target_vol_annual,
+                trading_days_per_year: values.trading_days_per_year,
                 vol_window: values.vol_window,
                 max_leverage: values.max_leverage,
                 min_vol_floor: values.min_vol_floor,
@@ -420,155 +459,164 @@ function App() {
             </Form.Item>
 
             <Form.Item label="Benchmark" style={{ marginBottom: 8 }}>
-              <Switch checked={showBenchmark} onChange={setShowBenchmark} disabled={isAdvanced} />
+              <Switch checked={showBenchmark} onChange={setShowBenchmark} disabled={anyFeatureEnabled} />
             </Form.Item>
 
-            <Form.Item label="Strategy Mode" name="strategy_mode" style={{ marginBottom: 8 }}>
-              <Select
-                options={[
-                  { label: 'Basic', value: 'basic' },
-                  { label: 'Advanced', value: 'advanced' },
-                ]}
-                onChange={(mode) => {
-                  if (mode === 'advanced') {
-                    setShowBenchmark(true)
-                  }
-                }}
-              />
-            </Form.Item>
+            <Collapse
+              defaultActiveKey={[]}
+              items={[
+                {
+                  key: 'modules',
+                  label: 'Strategy Modules (Performance)',
+                  children: (
+                    <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                      <Typography.Text style={{ color: '#94a3b8' }}>
+                        These modules affect the performance backtest only (stock-data). Signals list stays DMA-only.
+                      </Typography.Text>
 
-            {isAdvanced ? (
-              <div style={{ marginBottom: 8 }}>
-                <Collapse
-                  defaultActiveKey={['ensemble']}
-                  items={[
-                    {
-                      key: 'ensemble',
-                      label: 'Advanced Parameters',
-                      children: (
-                        <Space direction="vertical" size={10} style={{ width: '100%' }}>
-                          <Typography.Text style={{ color: '#94a3b8' }}>
-                            Advanced mode is applied only to the performance backtest (stock-data).
-                          </Typography.Text>
+                      <Typography.Title level={5} style={{ margin: 0 }}>
+                        Ensemble
+                      </Typography.Title>
+                      <Form.Item label="use_ensemble" name="use_ensemble" valuePropName="checked">
+                        <Switch disabled={!showBenchmark && !anyFeatureEnabled} />
+                      </Form.Item>
 
-                          <Typography.Title level={5} style={{ margin: 0 }}>
-                            Ensemble (required)
-                          </Typography.Title>
+                      <Form.Item shouldUpdate={(prev, next) => prev.use_ensemble !== next.use_ensemble} noStyle>
+                        {({ getFieldValue }) =>
+                          getFieldValue('use_ensemble') ? (
+                            <>
+                              <Form.Item
+                                label="ensemble_pairs"
+                                name="ensemble_pairs"
+                                rules={[
+                                  ({ getFieldValue: gv }) => ({
+                                    validator(_, value) {
+                                      if (!gv('use_ensemble')) return Promise.resolve()
+                                      try {
+                                        normalizeEnsemblePairs(String(value ?? ''))
+                                        return Promise.resolve()
+                                      } catch (e) {
+                                        return Promise.reject(e instanceof Error ? e : new Error('Invalid ensemble_pairs'))
+                                      }
+                                    },
+                                  }),
+                                ]}
+                              >
+                                <Input placeholder={DEFAULTS.ensemble_pairs} />
+                              </Form.Item>
 
-                          <Form.Item
-                            label="ensemble_pairs"
-                            name="ensemble_pairs"
-                            rules={[
-                              ({ getFieldValue }) => ({
-                                validator(_, value) {
-                                  if (getFieldValue('strategy_mode') !== 'advanced') {
-                                    return Promise.resolve()
-                                  }
-                                  try {
-                                    normalizeEnsemblePairs(String(value ?? ''))
-                                    return Promise.resolve()
-                                  } catch (e) {
-                                    return Promise.reject(e instanceof Error ? e : new Error('Invalid ensemble_pairs'))
-                                  }
-                                },
-                              }),
-                            ]}
-                          >
-                            <Input placeholder={DEFAULTS.ensemble_pairs} />
-                          </Form.Item>
+                              <Form.Item label="ensemble_ma_type" name="ensemble_ma_type">
+                                <Select options={[{ label: 'SMA', value: 'sma' }, { label: 'EMA', value: 'ema' }]} />
+                              </Form.Item>
+                            </>
+                          ) : null
+                        }
+                      </Form.Item>
 
-                          <Form.Item label="ensemble_ma_type" name="ensemble_ma_type">
-                            <Select options={[{ label: 'SMA', value: 'sma' }, { label: 'EMA', value: 'ema' }]} />
-                          </Form.Item>
+                      <Typography.Title level={5} style={{ margin: 0 }}>
+                        Regime Filter
+                      </Typography.Title>
+                      <Form.Item label="use_regime_filter" name="use_regime_filter" valuePropName="checked">
+                        <Switch disabled={!showBenchmark && !anyFeatureEnabled} />
+                      </Form.Item>
 
-                          <Typography.Title level={5} style={{ margin: 0 }}>
-                            Regime
-                          </Typography.Title>
+                      <Form.Item shouldUpdate={(prev, next) => prev.use_regime_filter !== next.use_regime_filter} noStyle>
+                        {({ getFieldValue }) =>
+                          getFieldValue('use_regime_filter') ? (
+                            <>
+                              <Form.Item label="regime_ma_window" name="regime_ma_window">
+                                <InputNumber min={2} max={1000} style={{ width: '100%' }} />
+                              </Form.Item>
 
-                          <Form.Item label="regime_ma_window" name="regime_ma_window">
-                            <InputNumber min={2} max={1000} style={{ width: '100%' }} />
-                          </Form.Item>
+                              <Form.Item label="use_adx_filter" name="use_adx_filter" valuePropName="checked">
+                                <Switch />
+                              </Form.Item>
 
-                          <Form.Item label="use_adx_filter" name="use_adx_filter" valuePropName="checked">
-                            <Switch />
-                          </Form.Item>
+                              <Form.Item shouldUpdate={(prev, next) => prev.use_adx_filter !== next.use_adx_filter} noStyle>
+                                {({ getFieldValue: gv }) =>
+                                  gv('use_adx_filter') ? (
+                                    <>
+                                      <Form.Item label="adx_window" name="adx_window">
+                                        <InputNumber min={2} max={200} style={{ width: '100%' }} />
+                                      </Form.Item>
+                                      <Form.Item label="adx_threshold" name="adx_threshold">
+                                        <InputNumber min={0} max={100} step={0.5} style={{ width: '100%' }} />
+                                      </Form.Item>
+                                    </>
+                                  ) : null
+                                }
+                              </Form.Item>
+                            </>
+                          ) : null
+                        }
+                      </Form.Item>
 
-                          <Form.Item shouldUpdate={(prev, next) => prev.use_adx_filter !== next.use_adx_filter} noStyle>
-                            {({ getFieldValue }) =>
-                              getFieldValue('use_adx_filter') ? (
-                                <>
-                                  <Form.Item label="adx_window" name="adx_window">
-                                    <InputNumber min={2} max={200} style={{ width: '100%' }} />
-                                  </Form.Item>
-                                  <Form.Item label="adx_threshold" name="adx_threshold">
-                                    <InputNumber min={0} max={100} step={0.5} style={{ width: '100%' }} />
-                                  </Form.Item>
-                                </>
-                              ) : null
-                            }
-                          </Form.Item>
+                      <Typography.Title level={5} style={{ margin: 0 }}>
+                        Volatility Targeting
+                      </Typography.Title>
+                      <Form.Item label="use_vol_targeting" name="use_vol_targeting" valuePropName="checked">
+                        <Switch disabled={!showBenchmark && !anyFeatureEnabled} />
+                      </Form.Item>
 
-                          <Typography.Title level={5} style={{ margin: 0 }}>
-                            Volatility Targeting
-                          </Typography.Title>
+                      <Form.Item shouldUpdate={(prev, next) => prev.use_vol_targeting !== next.use_vol_targeting} noStyle>
+                        {({ getFieldValue }) =>
+                          getFieldValue('use_vol_targeting') ? (
+                            <>
+                              <Form.Item label="target_vol_annual" name="target_vol_annual">
+                                <InputNumber min={0.0001} max={5} step={0.01} style={{ width: '100%' }} />
+                              </Form.Item>
+                              <Form.Item label="trading_days_per_year" name="trading_days_per_year">
+                                <InputNumber min={1} max={366} style={{ width: '100%' }} />
+                              </Form.Item>
+                              <Form.Item label="vol_window" name="vol_window">
+                                <InputNumber min={2} max={200} style={{ width: '100%' }} />
+                              </Form.Item>
+                              <Form.Item label="max_leverage" name="max_leverage">
+                                <InputNumber min={0} max={10} step={0.1} style={{ width: '100%' }} />
+                              </Form.Item>
+                              <Form.Item label="min_vol_floor" name="min_vol_floor">
+                                <InputNumber min={1e-12} max={1} step={1e-6} style={{ width: '100%' }} />
+                              </Form.Item>
+                            </>
+                          ) : null
+                        }
+                      </Form.Item>
 
-                          <Form.Item label="target_vol" name="target_vol">
-                            <InputNumber min={0} max={1} step={0.001} style={{ width: '100%' }} />
-                          </Form.Item>
+                      <Typography.Title level={5} style={{ margin: 0 }}>
+                        Exits
+                      </Typography.Title>
+                      <Form.Item label="use_chandelier_stop" name="use_chandelier_stop" valuePropName="checked">
+                        <Switch disabled={!showBenchmark && !anyFeatureEnabled} />
+                      </Form.Item>
 
-                          <Form.Item label="vol_window" name="vol_window">
-                            <InputNumber min={2} max={200} style={{ width: '100%' }} />
-                          </Form.Item>
+                      <Form.Item shouldUpdate={(prev, next) => prev.use_chandelier_stop !== next.use_chandelier_stop} noStyle>
+                        {({ getFieldValue }) =>
+                          getFieldValue('use_chandelier_stop') ? (
+                            <Form.Item label="chandelier_k" name="chandelier_k">
+                              <InputNumber min={0.1} max={10} step={0.1} style={{ width: '100%' }} />
+                            </Form.Item>
+                          ) : null
+                        }
+                      </Form.Item>
 
-                          <Form.Item label="max_leverage" name="max_leverage">
-                            <InputNumber min={0} max={10} step={0.1} style={{ width: '100%' }} />
-                          </Form.Item>
+                      <Form.Item label="use_vol_stop" name="use_vol_stop" valuePropName="checked">
+                        <Switch disabled={!showBenchmark && !anyFeatureEnabled} />
+                      </Form.Item>
 
-                          <Form.Item label="min_vol_floor" name="min_vol_floor">
-                            <InputNumber min={1e-12} max={1} step={1e-6} style={{ width: '100%' }} />
-                          </Form.Item>
-
-                          <Typography.Title level={5} style={{ margin: 0 }}>
-                            Exits (optional)
-                          </Typography.Title>
-
-                          <Form.Item label="use_chandelier_stop" name="use_chandelier_stop" valuePropName="checked">
-                            <Switch />
-                          </Form.Item>
-
-                          <Form.Item
-                            shouldUpdate={(prev, next) => prev.use_chandelier_stop !== next.use_chandelier_stop}
-                            noStyle
-                          >
-                            {({ getFieldValue }) =>
-                              getFieldValue('use_chandelier_stop') ? (
-                                <Form.Item label="chandelier_k" name="chandelier_k">
-                                  <InputNumber min={0.1} max={10} step={0.1} style={{ width: '100%' }} />
-                                </Form.Item>
-                              ) : null
-                            }
-                          </Form.Item>
-
-                          <Form.Item label="use_vol_stop" name="use_vol_stop" valuePropName="checked">
-                            <Switch />
-                          </Form.Item>
-
-                          <Form.Item shouldUpdate={(prev, next) => prev.use_vol_stop !== next.use_vol_stop} noStyle>
-                            {({ getFieldValue }) =>
-                              getFieldValue('use_vol_stop') ? (
-                                <Form.Item label="vol_stop_atr_mult" name="vol_stop_atr_mult">
-                                  <InputNumber min={0.1} max={20} step={0.1} style={{ width: '100%' }} />
-                                </Form.Item>
-                              ) : null
-                            }
-                          </Form.Item>
-                        </Space>
-                      ),
-                    },
-                  ]}
-                />
-              </div>
-            ) : null}
+                      <Form.Item shouldUpdate={(prev, next) => prev.use_vol_stop !== next.use_vol_stop} noStyle>
+                        {({ getFieldValue }) =>
+                          getFieldValue('use_vol_stop') ? (
+                            <Form.Item label="vol_stop_atr_mult" name="vol_stop_atr_mult">
+                              <InputNumber min={0.1} max={20} step={0.1} style={{ width: '100%' }} />
+                            </Form.Item>
+                          ) : null
+                        }
+                      </Form.Item>
+                    </Space>
+                  ),
+                },
+              ]}
+            />
 
             <Form.Item label="Short Window" name="short_window" rules={[{ required: true }]}>
               <InputNumber min={1} max={500} style={{ width: '100%' }} />
@@ -635,17 +683,20 @@ function App() {
                     gen_min_cross_gap: DEFAULTS.gen_min_cross_gap,
                     filter_signal_type: DEFAULTS.filter_signal_type,
                     filter_sort: 'desc',
-                    strategy_mode: DEFAULTS.strategy_mode,
 
+                    use_ensemble: DEFAULTS.use_ensemble,
                     ensemble_pairs: DEFAULTS.ensemble_pairs,
                     ensemble_ma_type: DEFAULTS.ensemble_ma_type,
 
+                    use_regime_filter: DEFAULTS.use_regime_filter,
                     regime_ma_window: DEFAULTS.regime_ma_window,
                     use_adx_filter: DEFAULTS.use_adx_filter,
                     adx_window: DEFAULTS.adx_window,
                     adx_threshold: DEFAULTS.adx_threshold,
 
-                    target_vol: DEFAULTS.target_vol,
+                    use_vol_targeting: DEFAULTS.use_vol_targeting,
+                    target_vol_annual: DEFAULTS.target_vol_annual,
+                    trading_days_per_year: DEFAULTS.trading_days_per_year,
                     vol_window: DEFAULTS.vol_window,
                     max_leverage: DEFAULTS.max_leverage,
                     min_vol_floor: DEFAULTS.min_vol_floor,
@@ -690,7 +741,7 @@ function App() {
             )}
           </div>
 
-          {showBenchmark && performance && !stockQuery.isLoading ? (
+          {includePerformance && performance && !stockQuery.isLoading ? (
             <div style={{ marginTop: 12 }}>
               <Typography.Title level={5} style={{ margin: '0 0 8px 0' }}>
                 Strategy vs Buy &amp; Hold (Normalized)

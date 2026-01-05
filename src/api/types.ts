@@ -46,7 +46,6 @@ export type SignalsResponse = {
   }
 }
 
-export type StrategyMode = 'basic' | 'advanced'
 export type MovingAverageType = 'sma' | 'ema'
 
 export type CommonQueryParams = {
@@ -62,25 +61,29 @@ export type CommonQueryParams = {
 export type StockDataQueryParams = CommonQueryParams & {
   include_performance?: boolean
 
-  strategy_mode?: StrategyMode
-
-  // Advanced strategy parameters (only meaningful when strategy_mode=advanced)
-  regime_ma_window?: number
+  // Strategy feature toggles (performance only)
+  use_ensemble?: boolean
+  use_regime_filter?: boolean
   use_adx_filter?: boolean
-  adx_window?: number
-  adx_threshold?: number
+  use_vol_targeting?: boolean
+  use_chandelier_stop?: boolean
+  use_vol_stop?: boolean
 
+  // Module parameters (sent only when enabled)
   ensemble_pairs?: string
   ensemble_ma_type?: MovingAverageType
 
-  target_vol?: number
+  regime_ma_window?: number
+  adx_window?: number
+  adx_threshold?: number
+
+  target_vol_annual?: number
+  trading_days_per_year?: number
   vol_window?: number
   max_leverage?: number
   min_vol_floor?: number
 
-  use_chandelier_stop?: boolean
   chandelier_k?: number
-  use_vol_stop?: boolean
   vol_stop_atr_mult?: number
 }
 
