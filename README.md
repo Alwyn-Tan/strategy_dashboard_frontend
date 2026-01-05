@@ -65,18 +65,11 @@ VITE_API_BASE_URL=http://127.0.0.1:8000
 - `src/App.tsx`：Dashboard 页面（Controls + Status + Chart + Signals）
 - `public/`：静态资源
 
-## 高级策略模式（Advanced）
+## 策略模块（可选）
 
-后端已支持 `strategy_mode=advanced`（仅用于 `/api/stock-data/` 的 `include_performance=true` 回测），前端在 Dashboard 的 Controls 面板提供了：
+后端已移除 `strategy_mode`，策略由“纯 DMA 基线” + 可选模块组成（仅影响 `GET /api/stock-data/` 的 `include_performance=true` 回测）。
 
-- `Strategy Mode`：`Basic` / `Advanced`
-- Advanced 模式下的参数面板（Ensemble / Regime / Vol Targeting / Exits）
+- 打开 `Benchmark` 后，可在 `Strategy Modules (Performance)` 面板勾选模块开关并填写参数（Ensemble / Regime / Vol Targeting / Exits）。
+- 未启用任何模块时，行为等同于纯 DMA。
 
-使用步骤：
-
-1) 打开 `Benchmark`（Advanced 会自动强制开启）
-2) 将 `Strategy Mode` 设为 `Advanced`
-3) 确保 `ensemble_pairs` 有值（例如 `5:20,10:50,20:100,50:200`）
-4) 点击 `Run`
-
-请求会自动带上 `include_performance=true&strategy_mode=advanced`，并将参数映射到后端 query params。
+说明：Signals 列表仍为 DMA 信号（`GET /api/signals/`），不受这些模块影响。
